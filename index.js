@@ -1,9 +1,11 @@
 import express from "express";
 import admin from "firebase-admin";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
 
-const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccountJSON = process.env.FIREBASE_SERVICE_ACCOUNT;
+if (!serviceAccountJSON) {
+  throw new Error("No se encontró la variable FIREBASE_SERVICE_ACCOUNT");
+}
+const serviceAccount = JSON.parse(serviceAccountJSON);
 
 const app = express();
 app.use(express.json());
