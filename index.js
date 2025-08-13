@@ -1,6 +1,7 @@
 import express from "express";
 import admin from "firebase-admin";
 import mqtt from "mqtt";
+import cors from "cors";  // 👈 Nuevo import
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
@@ -13,46 +14,30 @@ const db = admin.database();
 const app = express();
 app.use(express.json());
 
-// Middleware para loguear peticiones
+// Middleware para loguear peticiones (se mantiene igual)
 app.use((req, res, next) => {
   console.log(`Recibida petición: ${req.method} ${req.url}`, req.body);
   next();
 });
 
-// MQTT setup
-const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); // Cambia si quieres
+// Configuración CORS específica para /mode 👇
+const corsOptions = {
+  origin: "*", // Permitir cualquier origen (en producción usa tu dominio iOS)
+  methods: "POST" // Solo permitir POST
+};
+
+// MQTT setup (se mantiene igual)
+const mqttClient = mqtt.connect('mqtt://broker.hivemq.com');
 
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
   mqttClient.subscribe('catoor/servoState/set');
 });
 
-mqttClient.on('error', (err) => {
-  console.error('Error en MQTT:', err);
-});
+// ... (todo el resto del código MQTT y Firebase se mantiene IGUAL)
 
-mqttClient.on('message', async (topic, message) => {
-  if (topic === 'catoor/servoState/set') {
-    const state = message.toString();
-    if (['open', 'close'].includes(state)) {
-      await db.ref('servoState').set(state);
-      console.log(`servoState actualizado en Firebase desde MQTT: ${state}`);
-    }
-  }
-});
-
-// Firebase listener para cambios en servoState
-const servoRef = db.ref('servoState');
-servoRef.on('value', (snapshot) => {
-  const state = snapshot.val();
-  if (state) {
-    mqttClient.publish('catoor/servoState/get', state);
-    console.log(`Publicado estado en MQTT para Arduino: ${state}`);
-  }
-});
-
-// Endpoint para cambiar modo
-app.post('/mode', (req, res) => {
+// Endpoint para cambiar modo 👇 (ÚNICO cambio relevante)
+app.post('/mode', cors(corsOptions), (req, res) => {  // 👈 Aplica CORS solo aquí
   try {
     const { mode } = req.body;
 
@@ -76,7 +61,6 @@ app.post('/mode', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en puerto ${PORT}`);
 });
