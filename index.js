@@ -14,7 +14,7 @@ const app = express();
 app.use(express.json());
 
 // MQTT setup
-const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); //cambiar
+const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); //cambiar si quieres
 
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
@@ -41,7 +41,24 @@ servoRef.on('value', (snapshot) => {
   }
 });
 
-// Aquí tu código existente para endpoints HTTP si los tienes
+// NUEVO ENDPOINT /mode para controlar el modo de Arduino
+app.post('/mode', (req, res) => {
+  const { mode } = req.body;
+
+  if (mode !== 'addTag' && mode !== 'normal') {
+    return res.status(400).json({ error: 'Modo inválido. Debe ser "addTag" o "normal".' });
+  }
+
+  mqttClient.publish('catoor/arduino/mode', mode, (err) => {
+    if (err) {
+      console.error('Error publicando modo en MQTT:', err);
+      return res.status(500).json({ error: 'Error publicando en MQTT' });
+    }
+
+    console.log(`Modo enviado a Arduino: ${mode}`);
+    res.json({ success: true, mode });
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
