@@ -28,7 +28,7 @@ mqttClient.on('connect', () => {
   mqttClient.subscribe('catoor/arduino/tag'); // Suscribirse al topic de tags
 
   // Solo iniciar servidor cuando MQTT esté listo
-  const PORT = process.env.PORT || 3000;
+  const PORT = process.env.PORT || 8080;
   app.listen(PORT, () => {
     console.log(`Servidor escuchando en puerto ${PORT}`);
   });
