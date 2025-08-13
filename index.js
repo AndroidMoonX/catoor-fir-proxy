@@ -13,12 +13,24 @@ const db = admin.database();
 const app = express();
 app.use(express.json());
 
+// Middleware para loguear peticiones
+app.use((req, res, next) => {
+  console.log(`Recibida petición: ${req.method} ${req.url}`, req.body);
+  next();
+});
+
 // MQTT setup
-const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); //cambiar si quieres
+const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); // Cambia si quieres
 
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
   mqttClient.subscribe('catoor/servoState/set');
+
+  // Solo iniciar servidor cuando MQTT esté listo
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Servidor escuchando en puerto ${PORT}`);
+  });
 });
 
 mqttClient.on('message', async (topic, message) => {
@@ -41,26 +53,27 @@ servoRef.on('value', (snapshot) => {
   }
 });
 
-// NUEVO ENDPOINT /mode para controlar el modo de Arduino
+// Endpoint para cambiar modo
 app.post('/mode', (req, res) => {
-  const { mode } = req.body;
+  try {
+    const { mode } = req.body;
 
-  if (mode !== 'addTag' && mode !== 'normal') {
-    return res.status(400).json({ error: 'Modo inválido. Debe ser "addTag" o "normal".' });
-  }
-
-  mqttClient.publish('catoor/arduino/mode', mode, (err) => {
-    if (err) {
-      console.error('Error publicando modo en MQTT:', err);
-      return res.status(500).json({ error: 'Error publicando en MQTT' });
+    if (mode !== 'addTag' && mode !== 'normal') {
+      return res.status(400).json({ error: 'Modo inválido. Debe ser "addTag" o "normal".' });
     }
 
-    console.log(`Modo enviado a Arduino: ${mode}`);
-    res.json({ success: true, mode });
-  });
+    mqttClient.publish('catoor/arduino/mode', mode, (err) => {
+      if (err) {
+        console.error('Error publicando modo en MQTT:', err);
+        return res.status(500).json({ error: 'Error publicando en MQTT' });
+      }
+
+      console.log(`Modo enviado a Arduino: ${mode}`);
+      return res.json({ success: true, mode });
+    });
+  } catch (error) {
+    console.error('Error en /mode:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en puerto ${PORT}`);
-});
