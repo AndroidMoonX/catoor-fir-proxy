@@ -1,7 +1,6 @@
 import express from "express";
 import admin from "firebase-admin";
 import mqtt from "mqtt";
-import cors from "cors";  // 👈 Nuevo import
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
@@ -14,19 +13,25 @@ const db = admin.database();
 const app = express();
 app.use(express.json());
 
-// Middleware para loguear peticiones (se mantiene igual)
+// Middleware CORS MANUAL (sin paquetes externos)
 app.use((req, res, next) => {
+  // Solo aplica CORS a /mode
+  if (req.path === "/mode") {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "POST");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+  }
+  
+  // Manejo de preflight (OPTIONS)
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  
   console.log(`Recibida petición: ${req.method} ${req.url}`, req.body);
   next();
 });
 
-// Configuración CORS específica para /mode 👇
-const corsOptions = {
-  origin: "*", // Permitir cualquier origen (en producción usa tu dominio iOS)
-  methods: "POST" // Solo permitir POST
-};
-
-// MQTT setup (se mantiene igual)
+// MQTT setup (INALTERADO)
 const mqttClient = mqtt.connect('mqtt://broker.hivemq.com');
 
 mqttClient.on('connect', () => {
@@ -34,29 +39,50 @@ mqttClient.on('connect', () => {
   mqttClient.subscribe('catoor/servoState/set');
 });
 
-// ... (todo el resto del código MQTT y Firebase se mantiene IGUAL)
+mqttClient.on('error', (err) => {
+  console.error('Error en MQTT:', err);
+});
 
-// Endpoint para cambiar modo 👇 (ÚNICO cambio relevante)
-app.post('/mode', cors(corsOptions), (req, res) => {  // 👈 Aplica CORS solo aquí
+mqttClient.on('message', async (topic, message) => {
+  if (topic === 'catoor/servoState/set') {
+    const state = message.toString();
+    if (['open', 'close'].includes(state)) {
+      await db.ref('servoState').set(state);
+      console.log(`servoState actualizado en Firebase desde MQTT: ${state}`);
+    }
+  }
+});
+
+// Firebase listener (INALTERADO)
+const servoRef = db.ref('servoState');
+servoRef.on('value', (snapshot) => {
+  const state = snapshot.val();
+  if (state) {
+    mqttClient.publish('catoor/servoState/get', state);
+    console.log(`Publicado estado en MQTT para Arduino: ${state}`);
+  }
+});
+
+// Endpoint /mode (CORREGIDO)
+app.post('/mode', (req, res) => {
   try {
     const { mode } = req.body;
 
-    if (mode !== 'addTag' && mode !== 'normal') {
-      return res.status(400).json({ error: 'Modo inválido. Debe ser "addTag" o "normal".' });
+    if (!mode || (mode !== 'addTag' && mode !== 'normal')) {
+      return res.status(400).json({ error: 'Modo inválido' });
     }
 
     mqttClient.publish('catoor/arduino/mode', mode, (err) => {
       if (err) {
-        console.error('Error publicando modo en MQTT:', err);
-        return res.status(500).json({ error: 'Error publicando en MQTT' });
+        console.error('Error MQTT:', err);
+        return res.status(500).json({ error: 'Error al publicar en MQTT' });
       }
-
       console.log(`Modo enviado a Arduino: ${mode}`);
-      return res.json({ success: true, mode });
+      res.json({ success: true, mode });
     });
   } catch (error) {
     console.error('Error en /mode:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
@@ -64,6 +90,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en puerto ${PORT}`);
 });
-
 
 
