@@ -22,16 +22,16 @@ app.use((req, res, next) => {
 // MQTT setup
 const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); // Cambia si quieres
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor escuchando en puerto ${PORT}`);
+});
+
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
   mqttClient.subscribe('catoor/servoState/set');
-
-  // Solo iniciar servidor cuando MQTT esté listo
-  const PORT = process.env.PORT || 8080;
-  app.listen(PORT, () => {
-    console.log(`Servidor escuchando en puerto ${PORT}`);
-  });
 });
+
 
 mqttClient.on('error', (err) => {
   console.error('Error en MQTT:', err);
