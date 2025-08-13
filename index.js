@@ -25,63 +25,81 @@ app.use((req, res, next) => {
 // MQTT Setup
 const mqttClient = mqtt.connect('mqtt://broker.hivemq.com');
 
+// Configuración de tópicos MQTT
+const TOPICS = {
+  SERVO_SET: 'catoor/servoState/set',
+  SERVO_GET: 'catoor/servoState/get',
+  ARDUINO_MODE: 'catoor/arduino/mode',
+  NEW_TAG: 'catoor/arduino/newTag'  // 👈 Nuevo tópico para tags RFID
+};
+
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
-  mqttClient.subscribe('catoor/servoState/set');
+  // Suscribirse a los tópicos necesarios
+  mqttClient.subscribe(TOPICS.SERVO_SET);
+  console.log(`Suscrito a ${TOPICS.SERVO_SET}`);
 });
 
 mqttClient.on('error', (err) => {
   console.error('Error en MQTT:', err);
 });
 
-// Listener para servoState (existente)
-const servoRef = db.ref('servoState');
-servoRef.on('value', (snapshot) => {
-  const state = snapshot.val();
-  if (state) {
-    mqttClient.publish('catoor/servoState/get', state);
-    console.log(`Publicado estado de servo en MQTT: ${state}`);
-  }
-});
+// Manejo de mensajes MQTT
+mqttClient.on('message', async (topic, message) => {
+  const msg = message.toString();
+  console.log(`MQTT recibido - Tópico: ${topic}, Mensaje: ${msg}`);
 
-// NUEVO: Listener para arduinoMode
-const modeRef = db.ref('arduinoMode');
-modeRef.on('value', (snapshot) => {
-  const mode = snapshot.val();
-  if (mode) {
-    mqttClient.publish('catoor/arduino/mode', mode, { qos: 1 }, (err) => {
-      if (err) {
-        console.error('Error publicando modo:', err);
-      } else {
-        console.log(`Publicado modo en MQTT: ${mode}`);
-      }
-    });
-  }
-});
-
-// Endpoint para modo (opcional, si aún lo necesitas)
-/*app.post('/mode', (req, res) => {
   try {
-    const { mode } = req.body;
-    if (!mode || (mode !== 'addTag' && mode !== 'normal')) {
-      return res.status(400).json({ error: 'Modo inválido' });
+    if (topic === TOPICS.SERVO_SET) {
+      // Manejo del estado del servo
+      if (['open', 'close'].includes(msg)) {
+        await db.ref('servoState').set(msg);
+        console.log(`servoState actualizado en Firebase: ${msg}`);
+      }
     }
-    
-    db.ref('arduinoMode').set(mode)
-      .then(() => res.json({ success: true, mode }))
-      .catch(err => {
-        console.error('Error actualizando modo:', err);
-        res.status(500).json({ error: 'Error al actualizar modo' });
+    else if (topic === TOPICS.NEW_TAG) {  // 👈 Manejo de nuevos tags
+      console.log(`Nuevo tag RFID recibido: ${msg}`);
+      
+      // Guardar en Firebase bajo /tags/{tagId}
+      const tagRef = db.ref(`tags/${msg}`);
+      await tagRef.set({
+        timestamp: admin.database.ServerValue.TIMESTAMP,
+        status: "registered"
       });
+      console.log(`Tag ${msg} guardado en Firebase`);
+      
+      // Opcional: Cambiar automáticamente a modo normal
+      await db.ref('arduinoMode').set("normal");
+    }
   } catch (error) {
-    console.error('Error en /mode:', error);
-    res.status(500).json({ error: 'Error interno' });
+    console.error(`Error procesando ${topic}:`, error);
   }
 });
-*/
 
+// Listeners de Firebase para estados
+const setupFirebaseListeners = () => {
+  // Listener para servoState
+  db.ref('servoState').on('value', (snapshot) => {
+    const state = snapshot.val();
+    if (state) {
+      mqttClient.publish(TOPICS.SERVO_GET, state);
+      console.log(`Estado servo publicado a MQTT: ${state}`);
+    }
+  });
+
+  // Listener para arduinoMode
+  db.ref('arduinoMode').on('value', (snapshot) => {
+    const mode = snapshot.val();
+    if (mode) {
+      mqttClient.publish(TOPICS.ARDUINO_MODE, mode, { qos: 1 });
+      console.log(`Modo publicado a MQTT: ${mode}`);
+    }
+  });
+};
+
+// Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en puerto ${PORT}`);
+  setupFirebaseListeners();
 });
-
