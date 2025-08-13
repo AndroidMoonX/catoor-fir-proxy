@@ -65,24 +65,25 @@ servoRef.on('value', (snapshot) => {
 
 // Endpoint /mode (CORREGIDO)
 app.post('/mode', (req, res) => {
+  console.log("Llegó petición a /mode", req.body); // Debug
+  
   try {
     const { mode } = req.body;
-
-    if (!mode || (mode !== 'addTag' && mode !== 'normal')) {
-      return res.status(400).json({ error: 'Modo inválido' });
-    }
-
-    mqttClient.publish('catoor/arduino/mode', mode, (err) => {
+    if (!mode) throw new Error("No se recibió 'mode'");
+    
+    console.log("Publicando en MQTT..."); // Debug
+    mqttClient.publish('catoor/arduino/mode', mode, { qos: 1 }, (err) => {
       if (err) {
-        console.error('Error MQTT:', err);
-        return res.status(500).json({ error: 'Error al publicar en MQTT' });
+        console.error("Error MQTT:", err); // Debug
+        return res.status(500).json({ error: "Error MQTT", details: err.message });
       }
-      console.log(`Modo enviado a Arduino: ${mode}`);
+      console.log("Publicación MQTT exitosa"); // Debug
       res.json({ success: true, mode });
     });
+    
   } catch (error) {
-    console.error('Error en /mode:', error);
-    res.status(500).json({ error: 'Error interno' });
+    console.error("Error en /mode:", error); // Debug
+    res.status(400).json({ error: error.message });
   }
 });
 
