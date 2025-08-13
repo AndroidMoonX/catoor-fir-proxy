@@ -25,6 +25,7 @@ const mqttClient = mqtt.connect('mqtt://broker.hivemq.com'); // Cambia si quiere
 mqttClient.on('connect', () => {
   console.log('Conectado al broker MQTT');
   mqttClient.subscribe('catoor/servoState/set');
+  mqttClient.subscribe('catoor/arduino/tag'); // Suscribirse al topic de tags
 
   // Solo iniciar servidor cuando MQTT esté listo
   const PORT = process.env.PORT || 3000;
@@ -34,11 +35,31 @@ mqttClient.on('connect', () => {
 });
 
 mqttClient.on('message', async (topic, message) => {
+  const msgStr = message.toString();
+
   if (topic === 'catoor/servoState/set') {
-    const state = message.toString();
-    if (['open', 'close'].includes(state)) {
-      await db.ref('servoState').set(state);
-      console.log(`servoState actualizado en Firebase desde MQTT: ${state}`);
+    if (['open', 'close'].includes(msgStr)) {
+      await db.ref('servoState').set(msgStr);
+      console.log(`servoState actualizado en Firebase desde MQTT: ${msgStr}`);
+    }
+  } 
+  else if (topic === 'catoor/arduino/tag') {
+    const tagId = msgStr.trim();
+    console.log(`Tag recibido desde Arduino: ${tagId}`);
+
+    // Verificamos si el tag ya existe en la base
+    const tagRef = db.ref('tags').child(tagId);
+    const snapshot = await tagRef.once('value');
+    if (!snapshot.exists()) {
+      // Si no existe, creamos registro básico
+      await tagRef.set({
+        nombre: "Sin nombre",
+        entradas: {},
+        salidas: {}
+      });
+      console.log(`Nuevo tag guardado en Firebase: ${tagId}`);
+    } else {
+      console.log(`Tag ya existe: ${tagId}`);
     }
   }
 });
